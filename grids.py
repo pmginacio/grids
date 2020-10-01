@@ -4,6 +4,7 @@ import numpy as np
 import utils
 import cPickle as pickle
 import bz2
+import matplotlib.pyplot as plt
 
 __author__ = "Pedro Inácio"
 __copyright__ = "Copyright 2020"
@@ -95,14 +96,13 @@ class Grid(object):
 			if not np.allclose(res, 0.0):
 				raise ValueError('y list of points is not regularly spaced')
 
-		# arrays are stored with y-along the rows and x- along the columns
+		# arrays are stored with x-along the rows and y- along the columns
 		if xyz is not None:
-			self.z = np.full((self.ny,self.nx),np.nan)
+			self.z = np.full((self.nx,self.ny),np.nan)
 			# store input list
 			for x,y,z in xyz:
-				ix = int((x-self.xlim[0])/float(self.dx))
-				iy = int((y-self.ylim[0])/float(self.dy))
-				self.z[iy,ix] = z
+				ix, iy = self.xy_to_idx(x,y)
+				self.z[ix,iy] = z
 		else:
 			self.z = zin
 
@@ -134,16 +134,54 @@ class Grid(object):
 
 		raise NotImplementedError()
 
-	def plot(self, file, sym_colorbar=False):
-		import matplotlib.pyplot as plt
+	def plot(self, file, sym_colorbar=False, transpose=False):
+		'''
+		plot grid to a file
+		'''
 
 		fig, ax = plt.subplots()
+
+		# symmetric colobar
 		if sym_colorbar:
 			# make symetric colorbar around 0
 			vmax = np.max(np.abs([np.min(self.z), np.max(self.z)]))
 			vmin = -vmax
-		im = ax.imshow(self.z, origin='lower', cmap='bwr', vmin=vmin, vmax=vmax)
-		fig.colorbar(im, ax=ax, orientation='horizontal', fraction=.1)
+
+		if transpose:
+			z = self.z.T
+		else:
+			z = self.z
+
+		im = ax.imshow(z, origin='lower', cmap='bwr', vmin=vmin, vmax=vmax,
+			extent=[self.xlim[0],self.xlim[1],self.ylim[0],self.ylim[1]])
+		cb = fig.colorbar(im, ax=ax, orientation='horizontal', fraction=.1)
+
+		# labels
+		lbl = ''
+		if self.xlabel:
+			lbl = self.xlabel
+		if self.xunit:
+			lbl = lbl + ' [' + self.xunit + ']'
+		if lbl:
+			ax.set_xlabel(lbl)
+
+		lbl = ''
+		if self.ylabel:
+			lbl = self.ylabel
+		if self.yunit:
+			lbl = lbl + ' [' + self.yunit + ']'
+		if lbl:
+			ax.set_ylabel(lbl)
+
+		zlbl = ''
+		if self.zlabel:
+			zlbl = self.zlabel
+		if self.zunit:
+			zlbl = zlbl + ' [' + self.zunit + ']'
+		if zlbl:
+			cb.set_label(zlbl)
+		
+		# save
 		fig.savefig(file)
 
 	def __str__(self):
@@ -162,7 +200,54 @@ class Grid(object):
 
 		return aux
 
-	# implement operators
+	def xy_to_idx(self,x,y):
+		'''
+		convert x and y values to corresponding matrix indexes
+		'''
+
+		if x > self.xlim[1] or x < self.xlim[0]:
+			raise ValueError('x is not within the grid limits')
+		if y > self.ylim[1] or y < self.ylim[0]:
+			raise ValueError('y is not within the grid limits')
+
+		ix = int((x-self.xlim[0])/float(self.dx))
+		iy = int((y-self.ylim[0])/float(self.dy))
+
+		return ix, iy
+
+	def idx_to_xy(self,ix,iy):
+		'''
+		convert matrix indexes to x and y values
+
+		notice that ix and iy are cast to integers
+		'''
+
+		return self.x[int(ix)], self.y[int(iy)]
+
+	def pack(self):
+		'''
+		return a numpy array with x,y,z rows for finite value of the grid
+		'''
+
+		n = self.z.size
+		X = np.tile(self.x.reshape(self.nx,1),(1,self.ny))
+		Y = np.tile(self.y,(self.nx, 1))
+		xyz = np.hstack((X.reshape(n,1),Y.reshape(n,1),self.z.reshape(n,1)))
+		xyz = xyz[np.isfinite(xyz[:,2]),:]
+
+		return xyz
+
+	def __getitem__(self, key):
+		'''
+		this allows grid G to be accessed with the coordinates it was 
+		defined with
+		'''
+
+		ix, iy = self.xy_to_idx(*key)
+		
+		return self.z[ix,iy]
+
+	# TODO: implement operators
 	# article that covers the subject
 	#	https://realpython.com/operator-function-overloading/
 
